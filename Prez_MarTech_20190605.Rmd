@@ -1,0 +1,210 @@
+---
+title: "R Notebook for Markeeter Meetup"
+output:
+  html_document:
+    df_print: paged
+    
+#Inspiration, advices & help: http://code.markedmondson.me/googleAnalyticsR/
+
+---
+
+
+```{r}
+# load libraries
+library("googleAuthR")
+library("googleAnalyticsR")
+library("dplyr")
+library("tidyr")
+library("ggplot2")
+```
+
+```{r}
+# authorize connection with Google Analytics servers
+ga_auth()
+
+## get your accounts
+account_list <- ga_account_list()
+
+## pick a profile with data to query
+ga_id <- account_list[4,'viewId']
+```
+
+```{r}
+# get data from Goolgle Analytics account
+gadata <- google_analytics(ga_id, 
+                           date_range = c("2019-04-23", as.character(Sys.Date()-1)),
+                           metrics = c("users","sessions"), 
+                           dimensions = "date",
+                           max = 100)
+head(gadata,2)
+# for allavaiable  metrics and dimensions go to: https://developers.google.com/analytics/devguides/reporting/core/dimsmets
+
+```
+```{r}
+# First Graph
+gadata %>%
+ggplot(aes(x=date, y=sessions,size = sessions, color =sessions)) +
+  geom_point()+
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) 
+
+```
+
+```{r}
+#trend line
+gadata %>%
+ggplot(aes(x = gadata$date, y= gadata$sessions) ) + 
+  geom_point() + 
+  geom_smooth() +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+```
+
+```{r}
+#dayofWeek
+gadata2 <- google_analytics(ga_id, 
+                           date_range = c("2019-04-23", as.character(Sys.Date()-1)),
+                           metrics = "sessions", 
+                           dimensions = c("dayOfWeek","date"),
+                           max = 5000)
+library("modelr")
+library("ggplot2")
+mod <- lm(sessions ~ dayOfWeek, data = gadata2)
+summary(mod)
+m01 <- gadata2 %>% 
+  data_grid(dayOfWeek) %>% 
+  add_predictions(mod, "sessions")
+
+gadata2 %>%
+ggplot(aes(x = dayOfWeek, y = sessions)) + 
+  geom_boxplot()+
+    geom_point(grid = m01, colour = "magenta", size = 2)
+
+library(ggplot2)
+#plot the data
+ggplot(gadata, aes(x=date, y=users, label=users)) + 
+  geom_line() + 
+  #geom_point()+
+  geom_text(aes(label = users), position = position_stack(vjust = 1.2))+
+  ylab("Users") + theme_light() + 
+  ggtitle("Users cu split pe zi")
+```
+
+
+
+```{r}
+#Type of Device
+gadata3 <- google_analytics(ga_id, 
+                            date_range = c("2019-04-23", as.character(Sys.Date()-1)), 
+                           metrics = c("sessions", "avgSessionDuration"),
+                           dimensions = c("date", "deviceCategory"),
+                           max = 5000)
+
+
+# plot sessions with `deviceCategory`
+gadata3 %>%
+ggplot(aes(deviceCategory, sessions)) +   
+  geom_bar(aes(fill = deviceCategory), stat="identity")
+
+# plot sessions with `deviceCategory`
+gadata3 %>%
+ggplot(aes(deviceCategory, sessions)) +   
+  geom_bar(aes(fill = deviceCategory), stat="identity") +
+  facet_grid(.~deviceCategory)
+
+
+# plot avgSessionDuration with `deviceCategory`
+gadata3 %>%
+ggplot(aes(deviceCategory, avgSessionDuration)) +   
+  geom_bar(aes(fill = deviceCategory), stat="identity")
+```
+
+```{r}
+#Page View Query
+df1 <- google_analytics(ga_id, 
+                          date_range = c("2019-04-10", as.character(Sys.Date()-1)),
+                          metrics = c("pageviews"),
+                          dimensions = c("pagePath"))
+head(df1)
+```
+
+
+
+```{r}
+correlation_ex<- google_analytics(ga_id, 
+                              date_range = c("2019-04-23",as.character(Sys.Date()-1)),
+                              metrics = c("sessions", "pageviews", "entrances", "bounces"),
+                              dimensions = c("channelGrouping", "date", "deviceCategory"))
+
+#subset numeric data
+corr_metrics_data<-correlation_ex[,c("sessions", "pageviews", "entrances", "bounces")]
+#view corr matrix
+cor(corr_metrics_data)
+pairs(corr_metrics_data)
+
+library(tidyr)
+#Are web channels correlated?
+## Get only desktop rows, and the date, channelGrouping and sessions columns
+pivoted <- correlation_ex %>% 
+  filter(deviceCategory == "desktop") %>% 
+  select(date, channelGrouping, sessions) %>%
+  spread(channelGrouping, sessions)
+## Get rid of any NA's and replace with 0
+pivoted[is.na(pivoted)] <- 0
+#remove unnumeric values
+pivoted_corr_data<-pivoted[,-1]
+pivoted_corr_table<-round(cor(pivoted_corr_data),2)
+pairs(pivoted_corr_table)
+
+```
+
+
+```{r}
+#here i want to look at device & browser info
+#i also want to limit my output
+browser_info<- google_analytics(ga_id, 
+                                 date_range = c("2019-04-23",as.character(Sys.Date()-1)),
+                                 metrics = c("sessions", "users", "goalCompletionsAll"),
+                                 dimensions = c("browser", "browserVersion", 
+                                "browserSize", "screenResolution", "mobileDeviceinfo"),
+                                 max = 100)
+
+#lets visualize our data
+ggplot(data = browser_info, aes(x = reorder(browserSize, -sessions), y = sessions)) +
+  geom_bar(stat = "identity") +
+  theme_classic() + 
+  ggtitle("Which browsers sizes are our visitors using?") +
+  xlab(" ") +
+  ylab("total sessions") +
+  geom_text(aes(label = sessions), vjust = 1.6,
+  color = "white", size = 3.5)
+
+#stacked bar chart
+ggplot(data = browser_info, aes(browser)) +
+  geom_bar(aes(fill= screenResolution))
+# split in windows
+ggplot(data = browser_info, aes(browser)) +
+  geom_bar(aes(fill= screenResolution)) + facet_wrap(~browser, ncol = 5)
+```
+
+
+```{r}
+deviceCat<- google_analytics(ga_id, 
+                              date_range = c("2019-04-23",as.character(Sys.Date()-1)),
+                              metrics = "users",
+                              dimensions = c("date","deviceCategory", "channelGrouping"))
+
+## Get only desktop rows, and the date, channelGrouping and sessions columns
+pivoted <- deviceCat %>% 
+  filter(deviceCategory == "desktop") %>% 
+  select(date, channelGrouping, users) %>%
+  spread(channelGrouping, users)
+
+## Get rid of any NAs and replace with 0s
+pivoted[is.na(pivoted)] <- 0
+
+## Make a "Time-Series" Object
+web_data_ts <- ts(pivoted[-1], frequency = 7)
+## Time-series are set up to have useful plots
+par(col="#003399", cex.lab=0.8, cex.main=0.9)
+plot(web_data_ts, axes = FALSE, main = "Daily Sessions by Channel",
+     xlab = "Date")
+```
