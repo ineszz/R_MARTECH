@@ -4,7 +4,7 @@ output:
   html_document:
     df_print: paged
 ---
-
+#Inspiration, advices & help: http://code.markedmondson.me/googleAnalyticsR/
 
 ```{r}
 # load libraries
